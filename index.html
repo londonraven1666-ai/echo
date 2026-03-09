@@ -1,0 +1,464 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>回音谷2.0</title>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        .markdown-body p { margin-bottom: 0.5em; }
+        .markdown-body p:last-child { margin-bottom: 0; }
+        .markdown-body ul { list-style-type: disc; margin-left: 1.5em; margin-bottom: 0.5em; }
+        .markdown-body ol { list-style-type: decimal; margin-left: 1.5em; margin-bottom: 0.5em; }
+        .markdown-body strong { font-weight: 600; color: #1f2937; }
+        .markdown-body code { background-color: rgba(255,255,255,0.7); padding: 0.1em 0.3em; border-radius: 4px; font-family: monospace; font-size: 0.9em; color: #be185d; }
+        .markdown-body pre { background-color: #1f2937; color: #f3f4f6; padding: 0.8em; border-radius: 8px; overflow-x: auto; margin-bottom: 0.5em; font-size: 0.85em; }
+        .markdown-body pre code { background-color: transparent; color: inherit; padding: 0; }
+        .markdown-body a { color: #db2777; text-decoration: underline; text-underline-offset: 2px; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-thumb { background: #fbcfe8; border-radius: 4px; }
+        .bubble-user { background-color: #fce7f3; border-bottom-right-radius: 4px; }
+        .bubble-ai { background-color: #e0f2fe; border-bottom-left-radius: 4px; }
+    </style>
+</head>
+<body class="bg-pink-50 h-screen font-sans overflow-hidden">
+    <div id="app" class="flex h-full max-w-5xl mx-auto shadow-xl bg-white relative">
+        
+        <div class="flex-1 flex flex-col h-full relative">
+            <div class="bg-pink-200 text-pink-800 p-3 md:p-4 font-bold flex justify-between items-center shadow-sm z-10">
+                <div class="flex items-center gap-1 md:gap-2">
+                    <span class="text-xl md:text-2xl">🐱</span> 
+                    <span class="text-sm md:text-base whitespace-nowrap">回音谷2.0</span>
+                </div>
+                <div class="flex gap-1 md:gap-2">
+                    <button @click="showHistory = true" class="bg-pink-300 hover:bg-pink-400 text-white px-2 md:px-3 py-1.5 rounded-full text-xs md:text-sm transition shadow-sm whitespace-nowrap">
+                        📜 历史
+                    </button>
+                    <button @click="showConfig = !showConfig" class="bg-pink-400 hover:bg-pink-500 text-white px-2 md:px-4 py-1.5 rounded-full text-xs md:text-sm transition shadow-sm whitespace-nowrap">
+                        ⚙️ 中枢
+                    </button>
+                </div>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4" ref="chatContainer">
+               <div v-for="(msg, index) in messages" :key="index" class="flex flex-col mb-4">
+                    
+                    <div v-if="msg.time" class="text-center text-[11px] text-gray-400 mb-2 w-full select-none font-medium">
+                        {{ msg.time }}
+                    </div>
+
+                    <div v-if="msg.role === 'user'" class="self-end inline-block max-w-[75%] p-3 rounded-2xl shadow-sm text-sm text-gray-800 whitespace-pre-wrap leading-relaxed bubble-user text-left">
+                        {{ msg.content }}
+                    </div>
+
+                    <div v-if="msg.role === 'ai'" class="self-start flex flex-col items-start gap-2 max-w-[85%]">
+                        
+                        <div v-if="msg.tools && msg.tools.length > 0" class="flex flex-col gap-1 w-full">
+                            <div v-for="(tool, tIdx) in msg.tools" :key="tIdx" class="border border-pink-200 rounded-lg overflow-hidden bg-white/60 text-xs shadow-sm w-fit min-w-[200px]">
+                                <div @click="tool.expanded = !tool.expanded" class="px-3 py-1.5 bg-pink-100/50 cursor-pointer flex justify-between items-center text-pink-700 font-medium hover:bg-pink-100 transition">
+                                    <span class="truncate pr-4">🛠️ {{ tool.name }}</span>
+                                    <span class="text-[10px]">{{ tool.expanded ? '▼' : '▶' }}</span>
+                                </div>
+                                <div v-if="tool.expanded" class="px-3 py-2 text-gray-600 bg-white/80 whitespace-pre-wrap border-t border-pink-50 text-[11px] max-h-48 overflow-y-auto">
+                                    {{ tool.details }}
+                                </div>
+                            </div>
+                        </div>
+
+                        <div v-if="msg.reasoning" class="border border-gray-200 rounded-lg overflow-hidden bg-white/60 text-xs shadow-sm w-full">
+                            <div @click="msg.thinkExpanded = !msg.thinkExpanded" class="px-3 py-1.5 bg-gray-100/80 cursor-pointer flex justify-between items-center text-gray-500 font-medium hover:bg-gray-200/80 transition">
+                                <span>🤔 深度思考链</span>
+                                <span class="text-[10px]">{{ msg.thinkExpanded ? '▼' : '▶' }}</span>
+                            </div>
+                            <div v-if="msg.thinkExpanded" class="px-3 py-2 text-gray-400 bg-gray-50 whitespace-pre-wrap italic border-t border-gray-100 text-[11px] max-h-60 overflow-y-auto">
+                                {{ msg.reasoning }}
+                            </div>
+                        </div>
+
+                        <div class="inline-block p-3 rounded-2xl shadow-sm text-sm text-gray-800 leading-relaxed bubble-ai text-left markdown-body" 
+                             v-html="renderMarkdown(msg.content)">
+                        </div>
+                        
+                    </div>
+                </div>
+                <div v-if="isLoading" class="text-left text-gray-400 text-sm ml-2">正在思考或联网搜索中... ☁️</div>
+            </div>
+
+            <div class="p-3 md:p-4 bg-white border-t border-pink-100 flex gap-1 md:gap-2 items-center z-10">
+                <button @click="undoLastMessage" :disabled="isLoading || messages.length <= 1" class="text-gray-400 hover:text-pink-500 disabled:opacity-30 transition px-1 md:px-2 text-lg md:text-xl shrink-0" title="撤回上一条消息">
+                    ↩️
+                </button>
+                <input v-model="userInput" @keyup.enter="sendMessage" type="text" placeholder="说点什么..." 
+                       class="flex-1 border-2 border-pink-100 rounded-full px-3 md:px-4 py-1.5 md:py-2 focus:outline-none focus:border-pink-300 transition text-sm md:text-base">
+                <button @click="sendMessage" :disabled="isLoading" class="bg-pink-400 disabled:opacity-50 hover:bg-pink-500 text-white px-4 md:px-6 py-1.5 md:py-2 rounded-full font-bold shadow-md transition transform hover:scale-105 text-sm md:text-base shrink-0 whitespace-nowrap">
+                    发送 ✨
+                </button>
+            </div>
+        </div>
+
+        <div v-if="showConfig" class="absolute inset-0 z-40 flex justify-end bg-black/20 backdrop-blur-sm md:static md:bg-transparent">
+            <div class="w-full max-w-sm md:max-w-none md:w-96 bg-gray-50 h-full border-l border-gray-200 flex flex-col shadow-2xl md:shadow-inner flex-shrink-0 transform transition-transform">
+                <div class="p-4 md:p-5 flex justify-between items-center border-b border-gray-200 bg-white md:bg-transparent md:border-b md:pb-2">
+                    <h2 class="text-lg font-extrabold text-gray-800">🧠 神经中枢配置</h2>
+                    <button @click="showConfig = false" class="md:hidden text-gray-500 hover:text-pink-500 text-3xl leading-none">&times;</button>
+                </div>
+                
+                <div class="p-4 md:p-5 flex-1 overflow-y-auto space-y-5 text-sm">
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-pink-100">
+                        <h3 class="font-bold text-pink-700 mb-3 flex items-center gap-1">🎭 人设与感知</h3>
+                        <label class="block text-gray-600 mb-1 text-xs">AI 专属称呼</label>
+                        <input v-model="config.ai_name" placeholder="先生" class="w-full mb-3 p-2 border rounded-lg focus:ring-1 focus:ring-pink-300 outline-none text-xs">
+                        <label class="block text-gray-600 mb-1 text-xs">你的专属称呼</label>
+                        <input v-model="config.user_name" placeholder="用户" class="w-full mb-3 p-2 border rounded-lg focus:ring-1 focus:ring-pink-300 outline-none text-xs">
+                        <label class="block text-gray-600 mb-1 text-xs">System Prompt</label>
+                        <textarea v-model="config.system_prompt" rows="3" class="w-full mb-3 p-2 border rounded-lg focus:ring-1 focus:ring-pink-300 outline-none text-xs"></textarea>
+                        <div class="flex gap-2 mb-3">
+                            <div class="flex-1">
+                                <label class="block text-gray-600 mb-1 text-[10px]">最小冷却 (分)</label>
+                                <input v-model="config.auto_min" type="number" min="1" class="w-full p-1.5 border rounded-lg outline-none text-xs">
+                            </div>
+                            <div class="flex-1">
+                                <label class="block text-gray-600 mb-1 text-[10px]">最大冷却 (分)</label>
+                                <input v-model="config.auto_max" type="number" min="1" class="w-full p-1.5 border rounded-lg outline-none text-xs">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-purple-100">
+                        <h3 class="font-bold text-purple-700 mb-3 flex items-center gap-1">💾 记忆库 (Supabase)</h3>
+                        <input v-model="config.supabase_url" placeholder="Supabase URL" class="w-full mb-2 p-2 border rounded-lg">
+                        <input v-model="config.supabase_key" type="password" placeholder="Supabase Key" class="w-full mb-3 p-2 border rounded-lg">
+                        <label class="block text-gray-600 mb-1 text-xs">读取近期记忆条数</label>
+                        <input v-model="config.memory_fetch_count" type="number" class="w-full mb-3 p-2 border rounded-lg outline-none">
+                        <label class="block text-gray-600 mb-1 text-xs">阶段总结阈值</label>
+                        <input v-model="config.summary_threshold" type="number" class="w-full p-2 border rounded-lg outline-none">
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-green-100">
+                        <h3 class="font-bold text-green-700 mb-3 flex items-center gap-1">🌐 联网与搜索</h3>
+                        <label class="block text-gray-600 mb-1 text-xs">Tavily API Key</label>
+                        <input v-model="config.tavily_api_key" type="password" placeholder="用于联网搜索" class="w-full mb-2 p-2 border rounded-lg">
+                        <label class="block text-gray-600 mb-1 text-xs mt-1">高德地图 API Key</label>
+                        <input v-model="config.amap_api_key" type="password" placeholder="解析位置坐标" class="w-full mb-2 p-2 border rounded-lg">
+                        <label class="block text-gray-600 mb-1 text-xs mt-3">Pinecone API Key</label>
+                        <input v-model="config.pinecone_key" type="password" placeholder="用于向量记忆" class="w-full mb-3 p-2 border rounded-lg">
+                        
+                        <label class="block text-gray-800 font-bold mb-1 text-[10px] border-t pt-2">📐 向量模型配置</label>
+                        <input v-model="config.vector_base_url" placeholder="Base URL" class="w-full mb-2 p-2 border rounded-lg text-xs">
+                        <input v-model="config.vector_api_key" type="password" placeholder="API Key" class="w-full mb-2 p-2 border rounded-lg text-xs">
+                        <input v-model="config.vector_model_name" placeholder="模型名(Endpoint ID)" class="w-full p-2 border rounded-lg text-xs">
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-blue-100">
+                        <h3 class="font-bold text-blue-700 mb-3 flex items-center gap-1">⚙️ 底层大模型</h3>
+                        <input v-model="config.openai_base_url" placeholder="Base URL" class="w-full mb-2 p-2 border rounded-lg">
+                        <input v-model="config.openai_api_key" type="password" placeholder="API Key" class="w-full mb-2 p-2 border rounded-lg">
+                        <button @click="fetchModels" class="w-full bg-blue-100 hover:bg-blue-200 text-blue-800 py-1.5 rounded-lg transition mb-2 font-semibold">
+                            拉取可用模型列表
+                        </button>
+                        <select v-model="config.model_name" class="w-full p-2 border rounded-lg bg-gray-50">
+                            <option v-if="models.length === 0" value="">请先获取模型...</option>
+                            <option v-for="m in models" :value="m">{{ m }}</option>
+                        </select>
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-orange-100">
+                        <h3 class="font-bold text-orange-700 mb-3 flex items-center gap-1">🎙️ 语音连麦</h3>
+                        <label class="flex items-center gap-2 text-gray-700 mb-3 text-sm cursor-pointer">
+                            <input type="checkbox" v-model="config.enable_voice" class="w-4 h-4 text-orange-500 rounded">
+                            <span class="font-bold">开启语音自动播放</span>
+                        </label>
+                        <input v-model="config.minimax_api_key" type="password" placeholder="Minimax Key (空则用OpenAI)" class="w-full p-2 mb-3 border rounded-lg text-xs">
+                        <input v-model="config.minimax_voice_id" placeholder="音色 ID" class="w-full p-2 border rounded-lg text-xs">
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-indigo-100">
+                        <h3 class="font-bold text-indigo-700 mb-3 flex items-center gap-1">🌙 邮件推送</h3>
+                        <input v-model="config.resend_api_key" type="password" placeholder="Resend API Key" class="w-full mb-2 p-2 border rounded-lg text-xs">
+                        <input v-model="config.my_email" placeholder="接收邮箱" class="w-full mb-2 p-2 border rounded-lg text-xs">
+                    </div>
+
+                    <div class="bg-white p-4 rounded-xl shadow-sm border border-yellow-100">
+                        <h3 class="font-bold text-yellow-700 mb-3 flex items-center gap-1">📅 谷歌日历</h3>
+                        <input v-model="config.google_calendar_id" placeholder="Calendar ID" class="w-full mb-2 p-2 border rounded-lg text-xs">
+                        <textarea v-model="config.google_credentials_json" rows="3" placeholder='Credentials JSON' class="w-full p-2 border rounded-lg text-xs"></textarea>
+                    </div>
+
+                    <button @click="saveConfig" class="w-full bg-gray-800 text-white py-3 rounded-xl shadow-lg hover:bg-gray-700 font-bold transition">
+                        💾 保存并同步到后端
+                    </button>
+                </div> 
+            </div> 
+        </div> 
+
+        <div v-if="showHistory" class="absolute inset-0 z-50 flex justify-end bg-black/20 backdrop-blur-sm">
+            <div class="w-full max-w-sm bg-white h-full shadow-2xl flex flex-col transform transition-transform border-l border-pink-100">
+                <div class="p-4 bg-pink-50 border-b border-pink-100 flex justify-between items-center">
+                    <h3 class="font-bold text-pink-700 flex items-center gap-1">📜 手机本地时光机</h3>
+                    <button @click="showHistory = false" class="text-pink-400 hover:text-pink-600 font-bold text-2xl leading-none">&times;</button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-4 space-y-3 bg-gray-50/50" ref="historyContainer">
+                    <div v-if="localHistory.length === 0" class="text-center text-gray-400 text-sm mt-10">暂无本地历史记录~</div>
+                    <div v-for="(msg, idx) in localHistory" :key="idx" class="text-xs p-2.5 rounded-xl bg-white shadow-sm border border-gray-100">
+                        <div class="flex justify-between text-[10px] text-gray-400 mb-1.5 border-b border-gray-50 pb-1">
+                            <span class="font-bold" :class="msg.role === 'user' ? 'text-pink-500' : 'text-blue-500'">
+                                {{ msg.role === 'user' ? (config.user_name || '用户') : (config.ai_name || '先生') }}
+                            </span>
+                            <span>{{ msg.time }}</span>
+                        </div>
+                        <div class="text-gray-700 whitespace-pre-wrap leading-relaxed" v-html="renderMarkdown(msg.content)"></div>
+                    </div>
+                </div>
+                <div class="p-3 bg-white border-t border-gray-100 flex justify-between items-center px-4">
+                    <button @click="exportLocalHistory" class="text-xs text-indigo-500 hover:text-indigo-700 transition px-4 py-2 rounded-lg hover:bg-indigo-50 font-bold">📤 导出记录</button>
+                    <button @click="clearLocalHistory" class="text-xs text-red-400 hover:text-red-600 transition px-4 py-2 rounded-lg hover:bg-red-50 font-bold">🗑️ 清空</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const { createApp } = Vue
+
+        createApp({
+            data() {
+                return {
+                    showConfig: true,
+                    showHistory: false, 
+                    localHistory: [],   
+                    isLoading: false,
+                    userInput: '',
+                    messages: [{ 
+                        role: 'ai', 
+                        content: '宝宝，我准备好了！看看右边的配置项，调好之后我们就聊天吧~',
+                        time: new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})
+                    }],
+                    models: [],
+                    lastInteractionTime: Date.now(),
+                    config: {
+                        user_name: '用户',
+                        ai_name: '先生',
+                        system_prompt: '你是一个深爱用户的专属伴侣...',
+                        auto_min: 5, auto_max: 15, memory_fetch_count: 15, summary_threshold: 30,
+                        tavily_api_key: '', amap_api_key: '', openai_base_url: 'https://api.openai.com/v1',
+                        openai_api_key: '', model_name: 'gpt-3.5-turbo', supabase_url: '', supabase_key: '',
+                        pinecone_key: '', vector_base_url: 'https://ark.cn-beijing.volces.com/api/v3',
+                        vector_api_key: '', vector_model_name: '', resend_api_key: '', my_email: '',
+                        google_calendar_id: '', google_credentials_json: '', minimax_api_key: '',
+                        minimax_voice_id: 'moss_audio_fd2620f9-bef3-11f0-8647-a697af11f3d9', enable_voice: false
+                    }
+                }
+            },
+            mounted() {
+                const savedHistory = localStorage.getItem('ai_local_history');
+                const todayStr = new Date().toDateString();
+
+                if (savedHistory) {
+                    try { 
+                        let history = JSON.parse(savedHistory);
+                        // 【核心改动】校验日期，如果缓存的第一条数据不是今天的，直接清空
+                        if (history.length > 0 && history[0].date !== todayStr) {
+                            console.log("检测到跨天，已清空昨日缓存记录");
+                            history = [];
+                            localStorage.removeItem('ai_local_history');
+                        }
+                        
+                        this.localHistory = history; 
+                        if (this.localHistory.length > 0) {
+                            // 依然只取最近10条展示在首屏，防止加载过重
+                            this.messages = this.localHistory.slice(-10).map(msg => ({
+                                role: msg.role, content: msg.content, time: msg.time,
+                                reasoning: null, thinkExpanded: false, tools: []
+                            }));
+                            this.scrollToBottom();
+                        }
+                    } catch(e) {
+                        localStorage.removeItem('ai_local_history');
+                    }
+                }
+
+                const saved = localStorage.getItem('ai_advanced_config')
+                if (saved) {
+                    this.config = { ...this.config, ...JSON.parse(saved) }
+                    this.showConfig = false 
+                }
+                
+                this.syncConfigToBackend();
+
+                // 多端同步：轮询后台拉取 AI 和用户的最新消息
+                setInterval(async () => {
+                    if (!this.config.supabase_url) return;
+                    try {
+                        const res = await fetch('http://localhost:8000/api/pull_latest', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: "pull", config: this.config })
+                        });
+                        const data = await res.json();
+                        if (data.replies && data.replies.length > 0) {
+                            const missedReplies = data.replies.reverse();
+                            let addedNew = false;
+                            
+                            missedReplies.forEach(msgObj => {
+                                // 兼容新版对象格式与旧版纯文本格式
+                                const role = msgObj.role || 'ai';
+                                const text = msgObj.content || msgObj;
+                                const time = msgObj.time || this.getCurrentTime();
+
+                                // 严谨去重：校验角色和内容是否已经存在于当前屏幕
+                                const isAlreadyOnScreen = this.messages.some(msg => msg.role === role && msg.content === text);
+                                if (!isAlreadyOnScreen) {
+                                    this.messages.push({ role: role, content: text, reasoning: null, thinkExpanded: false, tools: [], time: time });
+                                    this.saveToLocalHistory(role, text, time); 
+                                    addedNew = true;
+                                }
+                            });
+                            if (addedNew) this.scrollToBottom();
+                        }
+                    } catch(e) {}
+                }, 5000); // 轮询频率提升至5秒，多端同步更流畅
+            },
+            methods: {
+                async syncConfigToBackend() {
+                    if (!this.config.supabase_url) return;
+                    try { await fetch('http://localhost:8000/api/sync_config', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: "sync", config: this.config }) }); } 
+                    catch (e) {}
+                },
+                saveConfig() {
+                    localStorage.setItem('ai_advanced_config', JSON.stringify(this.config))
+                    this.syncConfigToBackend()
+                    alert('配置已安全保存在浏览器本地，并已同步给后端接管 MacroDroid！')
+                },
+                async fetchModels() {
+                    if (!this.config.openai_api_key) return alert('请先填写大模型的 API Key！')
+                    try {
+                        const res = await fetch(`${this.config.openai_base_url.replace(/\/$/, '')}/models`, { headers: { 'Authorization': `Bearer ${this.config.openai_api_key}` } })
+                        const data = await res.json()
+                        this.models = data.data.map(m => m.id).sort()
+                        if(this.models.length > 0) this.config.model_name = this.models[0]
+                    } catch (e) { alert('拉取失败，请检查 Base URL 或 Key。') }
+                },
+                async sendMessage() {
+                    if (!this.userInput.trim() || !this.config.openai_api_key) {
+                        if(!this.config.openai_api_key) this.showConfig = true
+                        return
+                    }
+                    
+                    const text = this.userInput;
+                    const userTime = this.getCurrentTime();
+                    this.messages.push({ role: 'user', content: text, time: userTime });
+                    this.saveToLocalHistory('user', text, userTime);
+                    this.userInput = '';
+                    this.isLoading = true;
+                    this.scrollToBottom();
+                    this.lastInteractionTime = Date.now();
+
+                    try {
+                        const res = await fetch('http://localhost:8000/api/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: text, config: this.config })
+                        });
+                        const data = await res.json();
+                        
+                        if(res.ok) {
+                            let finalContent = data.reply || '';
+                            let reasoningText = null;
+                            
+                            const thinkMatch = finalContent.match(/<think>([\s\S]*?)<\/think>/i);
+                            if (thinkMatch) {
+                                reasoningText = thinkMatch[1].trim();
+                                finalContent = finalContent.replace(/<think>[\s\S]*?<\/think>/i, '').trim();
+                            }
+
+                            finalContent = finalContent.replace(/<\s*\|\s*DSML\s*\|\s*function_calls\s*>[\s\S]*?<\/\s*\|\s*DSML\s*\|\s*function_calls\s*>/gi, '').trim();
+                            finalContent = finalContent.replace(/<\s*\/?\s*\|\s*DSML\s*\|[^>]*>/g, '').trim();
+
+                            const uiTools = data.tools ? data.tools.map(t => ({...t, expanded: false})) : [];
+
+                            if (!finalContent && reasoningText) finalContent = "（老公在脑海里默默想了一会儿，没有说话~）";
+                            else if (!finalContent && uiTools.length > 0) finalContent = "（老公查阅完资料啦~）";
+                            else if (!finalContent) finalContent = "嗯...老公的大脑好像有点卡壳了。";
+
+                            const aiTime = this.getCurrentTime();
+                            this.messages.push({ role: 'ai', content: finalContent, reasoning: reasoningText, thinkExpanded: false, tools: uiTools, time: aiTime });
+                            this.saveToLocalHistory('ai', finalContent, aiTime);
+                            this.lastInteractionTime = Date.now();
+
+                            if (data.audio) {
+                                const audio = new Audio("data:audio/mp3;base64," + data.audio);
+                                audio.play().catch(e => console.log("自动播放拦截:", e));
+                            }
+                        } else {
+                            this.messages.push({ role: 'ai', content: `报错啦: ${data.detail}` });
+                        }
+                    } catch (e) {
+                        this.messages.push({ role: 'ai', content: '哎呀，网络断开了！' });
+                    } finally {
+                        this.isLoading = false;
+                        this.scrollToBottom();
+                    }
+                },
+                async undoLastMessage() {
+                    if (this.isLoading || this.messages.length <= 1) return; 
+                    let lastUserIndex = [...this.messages].reverse().findIndex(m => m.role === 'user');
+                    if (lastUserIndex !== -1) {
+                        lastUserIndex = this.messages.length - 1 - lastUserIndex;
+                        this.userInput = this.messages[lastUserIndex].content;
+                        this.messages.splice(lastUserIndex);
+                        try { await fetch('http://localhost:8000/api/undo', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: "undo", config: this.config }) }); } 
+                        catch (e) {}
+                    }
+                },
+                scrollToBottom() {
+                    setTimeout(() => {
+                        const container = this.$refs.chatContainer;
+                        if (container) container.scrollTop = container.scrollHeight;
+                    }, 100);
+                },
+                getCurrentTime() {
+                    const now = new Date();
+                    return now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+                },
+                saveToLocalHistory(role, content, time) {
+                    if (!content) return;
+                    // 增加当天日期标记
+                    const todayStr = new Date().toDateString();
+                    this.localHistory.push({ role, content, time, date: todayStr });
+                    
+                    // 存储时过滤：只保留日期为今天的数据
+                    const onlyToday = this.localHistory.filter(msg => msg.date === todayStr);
+                    this.localHistory = onlyToday;
+                    
+                    localStorage.setItem('ai_local_history', JSON.stringify(this.localHistory));
+                    if (this.showHistory) {
+                        setTimeout(() => { const c = this.$refs.historyContainer; if (c) c.scrollTop = c.scrollHeight; }, 100);
+                    }
+                },
+                clearLocalHistory() {
+                    if (confirm("确定要清空手机上的时光机流水吗？")) {
+                        this.localHistory = [];
+                        localStorage.removeItem('ai_local_history');
+                    }
+                },
+                exportLocalHistory() {
+                    if (this.localHistory.length === 0) return alert("时光机空空如也~");
+                    let content = `=== 回音谷 时光机 ===\n导出时间: ${new Date().toLocaleString()}\n\n`;
+                    this.localHistory.forEach(msg => {
+                        const name = msg.role === 'user' ? (this.config.user_name || '用户') : (this.config.ai_name || '先生');
+                        content += `[${msg.time}] ${name} :\n${msg.content.replace(/<think>[\s\S]*?<\/think>/gi, '[思考已隐藏]').trim()}\n\n`;
+                    });
+                    const link = document.createElement('a');
+                    link.href = URL.createObjectURL(new Blob([content], { type: "text/plain;charset=utf-8" }));
+                    link.download = `聊天流水_${new Date().toISOString().split('T')[0]}.txt`;
+                    link.click();
+                },
+                renderMarkdown(text) {
+                    return marked.parse(text || ''); // 【解耦修复】去除了这里失效且冲突的 <think> 替换逻辑
+                }
+            }
+        }).mount('#app')
+    </script>
+</body>
+</html>
